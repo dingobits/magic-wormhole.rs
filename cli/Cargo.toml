@@ -1,5 +1,5 @@
 [package]
-name = "wormhole-rs"
+name = "wormhole"
 version = "0.6.1"
 edition = "2021"
 
