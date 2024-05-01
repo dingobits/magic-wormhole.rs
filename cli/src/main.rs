@@ -3,7 +3,6 @@ mod util;
 
 use std::time::{Duration, Instant};
 
-use arboard::Clipboard;
 use async_std::sync::Arc;
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use color_eyre::{eyre, eyre::Context};
@@ -280,12 +279,6 @@ async fn main() -> eyre::Result<()> {
             .try_init()?;
     }
 
-    let mut clipboard = Clipboard::new()
-        .map_err(|err| {
-            log::warn!("Failed to initialize clipboard support: {}", err);
-        })
-        .ok();
-
     match app.command {
         WormholeCommand::Send {
             common,
@@ -305,7 +298,6 @@ async fn main() -> eyre::Result<()> {
                     true,
                     transfer::APP_CONFIG,
                     Some(&sender_print_code),
-                    clipboard.as_mut(),
                 )),
                 ctrl_c(),
             )
@@ -343,7 +335,6 @@ async fn main() -> eyre::Result<()> {
                     true,
                     transfer::APP_CONFIG,
                     Some(&sender_print_code),
-                    clipboard.as_mut(),
                 ));
                 match futures::future::select(connect_fut, ctrl_c()).await {
                     Either::Left((result, _)) => result?,
@@ -383,7 +374,6 @@ async fn main() -> eyre::Result<()> {
                     false,
                     transfer::APP_CONFIG,
                     None,
-                    clipboard.as_mut(),
                 ));
                 match futures::future::select(connect_fut, ctrl_c()).await {
                     Either::Left((result, _)) => result?,
@@ -457,7 +447,6 @@ async fn main() -> eyre::Result<()> {
                     true,
                     app_config,
                     Some(&server_print_code),
-                    clipboard.as_mut(),
                 ));
                 let (wormhole, _code, relay_hints) =
                     match futures::future::select(connect_fut, ctrl_c()).await {
@@ -493,7 +482,6 @@ async fn main() -> eyre::Result<()> {
                 false,
                 app_config,
                 None,
-                clipboard.as_mut(),
             )
             .await?;
 
@@ -523,7 +511,7 @@ async fn main() -> eyre::Result<()> {
             match shell {
                 shell @ clap_complete::Shell::Zsh => {
                     // for zsh, we will wrap the output to make it easier to use
-                    // this way we can source it directly `source <(wormhole-rs completion zsh)`
+                    // this way we can source it directly `source <(wormhole completion zsh)`
 
                     let mut out = Vec::new();
                     clap_complete::generate(shell, &mut cmd, &binary_name, &mut out);
@@ -579,7 +567,6 @@ async fn parse_and_connect(
     is_send: bool,
     mut app_config: magic_wormhole::AppConfig<impl serde::Serialize + Send + Sync + 'static>,
     print_code: Option<&PrintCodeFn>,
-    clipboard: Option<&mut Clipboard>,
 ) -> eyre::Result<(Wormhole, magic_wormhole::Code, Vec<transit::RelayHint>)> {
     // TODO handle relay servers with multiple endpoints better
     let mut relay_hints: Vec<transit::RelayHint> = common_args
@@ -622,15 +609,7 @@ async fn parse_and_connect(
             let mailbox_connection =
                 MailboxConnection::create(app_config, code_length.unwrap()).await?;
 
-            /* Print code and also copy it to clipboard */
             if is_send {
-                if let Some(clipboard) = clipboard {
-                    match clipboard.set_text(mailbox_connection.code.to_string()) {
-                        Ok(()) => log::info!("Code copied to clipboard"),
-                        Err(err) => log::warn!("Failed to copy code to clipboard: {}", err),
-                    }
-                }
-
                 print_code.expect("`print_code` must be `Some` when `is_send` is `true`")(
                     term,
                     &mailbox_connection.code,
@@ -750,22 +729,19 @@ fn sender_print_code(
     .to_string();
     writeln!(
         term,
-        "\nThis wormhole's code is: {} (it has been copied to your clipboard)",
+        "\nThis wormhole's code is: {}",
         style(&code).bold()
     )?;
     writeln!(term, "This is equivalent to the following link: \u{001B}]8;;{}\u{001B}\\{}\u{001B}]8;;\u{001B}\\", &uri, &uri)?;
-    let qr =
-        qr2term::generate_qr_string(&uri).context("Failed to generate QR code for send link")?;
-    writeln!(term, "{}", qr)?;
 
     writeln!(
         term,
-        "On the other side, open the link or enter that code into a Magic Wormhole client."
+        "\nOn the other side, open the link or enter that code into a Magic Wormhole client."
     )?;
     writeln!(
         term,
         "For example: {} {}\n",
-        style("wormhole-rs receive").bold(),
+        style("wormhole receive").bold(),
         style(&code).bold()
     )?;
     Ok(())
@@ -785,7 +761,7 @@ fn server_print_code(
     writeln!(
         term,
         "For example: {} {}\n",
-        style("wormhole-rs forward connect").bold(),
+        style("wormhole forward connect").bold(),
         style(&code).bold()
     )?;
     Ok(())
